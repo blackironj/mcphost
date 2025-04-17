@@ -316,9 +316,6 @@ func runPrompt(
 		fmt.Print(str)
 	}
 
-	toolResults := []history.ContentBlock{}
-	messageContent = []history.ContentBlock{}
-
 	// Add text content
 	if message.GetContent() != "" {
 		if err := updateRenderer(); err != nil {
@@ -338,25 +335,40 @@ func runPrompt(
 	}
 
 	// Handle tool calls
-	for _, toolCall := range message.GetToolCalls() {
-		log.Info("🔧 Using tool", "name", toolCall.GetName())
+	toolCalls := message.GetToolCalls()
+	if len(toolCalls) <= 0 {
+		// If no tool calls, just add the message
+		*messages = append(*messages, history.HistoryMessage{
+			Role:    message.GetRole(),
+			Content: messageContent,
+		})
+
+		fmt.Println() // Add spacing
+		return nil
+	}
+
+	log.Debug("Processing tool calls", "count", len(toolCalls))
+
+	// Create assistant message with tool calls
+	assistantMsg := history.HistoryMessage{
+		Role:    message.GetRole(),
+		Content: messageContent,
+	}
+
+	// Process each tool call and its response
+	for _, toolCall := range toolCalls {
+		log.Info("Using tool", "name", toolCall.GetName(), "id", toolCall.GetID())
 
 		input, _ := json.Marshal(toolCall.GetArguments())
-		messageContent = append(messageContent, history.ContentBlock{
+		toolUseBlock := history.ContentBlock{
 			Type:  "tool_use",
 			ID:    toolCall.GetID(),
 			Name:  toolCall.GetName(),
 			Input: input,
-		})
-
-		// Log usage statistics if available
-		inputTokens, outputTokens := message.GetUsage()
-		if inputTokens > 0 || outputTokens > 0 {
-			log.Info("Usage statistics",
-				"input_tokens", inputTokens,
-				"output_tokens", outputTokens,
-				"total_tokens", inputTokens+outputTokens)
 		}
+
+		// Add tool use block to assistant message
+		assistantMsg.Content = append(assistantMsg.Content, toolUseBlock)
 
 		parts := strings.Split(toolCall.GetName(), "__")
 		if len(parts) != 2 {
@@ -403,13 +415,17 @@ func runPrompt(
 			)
 			fmt.Printf("\n%s\n", errorStyle.Render(errMsg))
 
-			// Add error message as tool result
-			toolResults = append(toolResults, history.ContentBlock{
-				Type:      "tool_result",
-				ToolUseID: toolCall.GetID(),
+			// Add error as tool result
+			*messages = append(*messages, assistantMsg)
+			*messages = append(*messages, history.HistoryMessage{
+				Role: "user",
 				Content: []history.ContentBlock{{
-					Type: "text",
-					Text: errMsg,
+					Type:      "tool_result",
+					ToolUseID: toolCall.GetID(),
+					Content: []history.ContentBlock{{
+						Type: "text",
+						Text: errMsg,
+					}},
 				}},
 			})
 			continue
@@ -437,30 +453,26 @@ func runPrompt(
 			}
 
 			resultBlock.Text = strings.TrimSpace(resultText)
-			log.Debug("created tool result block",
-				"block", resultBlock,
-				"tool_id", toolCall.GetID())
+			log.Debug("Tool result received", "name", toolName, "id", toolCall.GetID())
 
-			toolResults = append(toolResults, resultBlock)
+			// Add assistant message with tool call and its result
+			*messages = append(*messages, assistantMsg)
+			*messages = append(*messages, history.HistoryMessage{
+				Role:    "user",
+				Content: []history.ContentBlock{resultBlock},
+			})
+
+			// Reset assistantMsg for next tool call
+			assistantMsg = history.HistoryMessage{
+				Role:    message.GetRole(),
+				Content: messageContent,
+			}
 		}
 	}
 
-	*messages = append(*messages, history.HistoryMessage{
-		Role:    message.GetRole(),
-		Content: messageContent,
-	})
-
-	if len(toolResults) > 0 {
-		*messages = append(*messages, history.HistoryMessage{
-			Role:    "user",
-			Content: toolResults,
-		})
-		// Make another call to get Claude's response to the tool results
-		return runPrompt(ctx, provider, mcpClients, tools, "", messages)
-	}
-
-	fmt.Println() // Add spacing
-	return nil
+	log.Info("Processing tool results response")
+	// Process the final response to tool results
+	return runPrompt(ctx, provider, mcpClients, tools, "", messages)
 }
 
 func runMCPHost(ctx context.Context) error {
