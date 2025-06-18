@@ -67,6 +67,8 @@ Examples:
   # Script mode
   mcphost script myscript.sh`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		viper.BindPFlags(cmd.Flags())
+		viper.BindPFlags(cmd.PersistentFlags())
 		return runMCPHost(context.Background())
 	},
 }
@@ -111,21 +113,6 @@ func init() {
 	flags.Int32Var(&numGPU, "num-gpu", 1, "number of GPUs to use for Ollama models")
 	flags.Int32Var(&mainGPU, "main-gpu", 0, "main GPU to use for Ollama models")
 
-	// Bind flags to viper for config file support
-	viper.BindPFlag("system-prompt", rootCmd.PersistentFlags().Lookup("system-prompt"))
-	viper.BindPFlag("model", rootCmd.PersistentFlags().Lookup("model"))
-	viper.BindPFlag("debug", rootCmd.PersistentFlags().Lookup("debug"))
-	viper.BindPFlag("max-steps", rootCmd.PersistentFlags().Lookup("max-steps"))
-	viper.BindPFlag("provider-url", rootCmd.PersistentFlags().Lookup("provider-url"))
-	viper.BindPFlag("provider-api-key", rootCmd.PersistentFlags().Lookup("provider-api-key"))
-	viper.BindPFlag("max-tokens", rootCmd.PersistentFlags().Lookup("max-tokens"))
-	viper.BindPFlag("temperature", rootCmd.PersistentFlags().Lookup("temperature"))
-	viper.BindPFlag("top-p", rootCmd.PersistentFlags().Lookup("top-p"))
-	viper.BindPFlag("top-k", rootCmd.PersistentFlags().Lookup("top-k"))
-	viper.BindPFlag("stop-sequences", rootCmd.PersistentFlags().Lookup("stop-sequences"))
-	viper.BindPFlag("num-gpu", rootCmd.PersistentFlags().Lookup("num-gpu"))
-	viper.BindPFlag("main-gpu", rootCmd.PersistentFlags().Lookup("main-gpu"))
-
 	// Set defaults in viper (lowest precedence)
 	viper.SetDefault("model", "anthropic:claude-sonnet-4-20250514")
 	viper.SetDefault("max-steps", 0)
@@ -143,6 +130,9 @@ func runMCPHost(ctx context.Context) error {
 }
 
 func runNormalMode(ctx context.Context) error {
+
+	fmt.Println("flag modelFlag:", modelFlag)
+	fmt.Println("viper model:", viper.GetString("model"))
 	// Validate flag combinations
 	if quietFlag && promptFlag == "" {
 		return fmt.Errorf("--quiet flag can only be used with --prompt/-p")
