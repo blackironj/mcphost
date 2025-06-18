@@ -130,9 +130,6 @@ func runMCPHost(ctx context.Context) error {
 }
 
 func runNormalMode(ctx context.Context) error {
-
-	fmt.Println("flag modelFlag:", modelFlag)
-	fmt.Println("viper model:", viper.GetString("model"))
 	// Validate flag combinations
 	if quietFlag && promptFlag == "" {
 		return fmt.Errorf("--quiet flag can only be used with --prompt/-p")
